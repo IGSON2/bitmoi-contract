@@ -6,49 +6,132 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract Vault is Ownable {
-    struct Bidding {
-        address bidder;
-        uint256 amount;
+    IERC20 internal token;
+    address public adAuction;
+    uint public _round;
+
+    mapping(string => mapping(address => uint))[] public _biddingsBySpot;
+    mapping(uint => mapping(string => bool)) public _finalizedChecker;
+
+    event Submitted(
+        uint indexed round,
+        string adSpot,
+        address indexed bidder,
+        uint amount
+    );
+
+    event Canceled(uint indexed round, string adSpot, address indexed bidder);
+
+    event Encreased(
+        uint indexed round,
+        string adSpot,
+        address indexed bidder,
+        uint amount
+    );
+
+    event Decreased(
+        uint indexed round,
+        string adSpot,
+        address indexed bidder,
+        uint amount
+    );
+
+    event Finalized(uint round, string adSpot, address indexed bidder);
+
+    modifier onlyAdAuction() {
+        require(msg.sender == adAuction, "Only AdAuction contract can call");
+        _;
     }
 
-    IERC20 internal token;
-
-    mapping(string => Bidding[]) public _biddingsBySpot;
-
-    constructor(address _adAuction, address _moiToken) Ownable(_adAuction) {
+    constructor(address _moiToken) Ownable(msg.sender) {
         require(
             IERC20.totalSupply.selector ==
                 IERC20(_moiToken).totalSupply.selector,
             "Not a valid ERC20 token"
         );
         token = IERC20(_moiToken);
+        _biddingsBySpot.push();
     }
 
-    function lock(
+    function setAdAuction(address _adAuction) public onlyOwner {
+        adAuction = _adAuction;
+    }
+
+    function newRound() public onlyOwner {
+        _biddingsBySpot.push();
+        _round++;
+    }
+
+    function submitBid(
         string memory _adSpot,
         address _bidder,
         uint _amount
-    ) external onlyOwner {
-        require(token.transfer(address(this), _amount), "Transfer failed");
-        _biddingsBySpot[_adSpot].push(Bidding(_bidder, _amount));
-        if (_biddingsBySpot[_adSpot][0].amount < _amount) {
-            _biddingsBySpot[_adSpot][0] = _biddingsBySpot[_adSpot][
-                _biddingsBySpot[_adSpot].length - 1
-            ];
-        }
+    ) public onlyAdAuction {
+        require(
+            token.balanceOf(_bidder) >= _amount,
+            "Insufficient token balance"
+        );
+        _biddingsBySpot[_round][_adSpot][_bidder] += _amount;
+        emit Submitted(_round, _adSpot, _bidder, _amount);
     }
 
-    function unlock(
-        string memory _adSpot
-    ) external onlyOwner returns (address) {
-        address highestBidder = _biddingsBySpot[_adSpot][0].bidder;
-        for (uint i = 1; i < _biddingsBySpot[_adSpot].length; i++) {
-            address to = _biddingsBySpot[_adSpot][i].bidder;
-            uint256 amount = (_biddingsBySpot[_adSpot][i].amount * 90) / 100;
-            token.transfer(to, amount);
-        }
-        delete _biddingsBySpot[_adSpot];
+    function cancelBid(
+        string memory _adSpot,
+        address _bidder
+    ) public onlyAdAuction {
+        delete _biddingsBySpot[_round][_adSpot][_bidder];
+        emit Canceled(_round, _adSpot, _bidder);
+    }
 
-        return highestBidder;
+    function encreaseBid(
+        string memory _adSpot,
+        address _bidder,
+        uint _amount
+    ) public onlyAdAuction {
+        require(_biddingsBySpot[_round][_adSpot][_bidder] >= 0, "not locked");
+        _biddingsBySpot[_round][_adSpot][_bidder] += _amount;
+        emit Encreased(_round, _adSpot, _bidder, _amount);
+    }
+
+    function decreaseBid(
+        string memory _adSpot,
+        address _bidder,
+        uint _amount
+    ) public onlyAdAuction {
+        require(
+            _biddingsBySpot[_round][_adSpot][_bidder] >= _amount,
+            "overdrawn amount"
+        );
+        _biddingsBySpot[_round][_adSpot][_bidder] -= _amount;
+        emit Decreased(_round, _adSpot, _bidder, _amount);
+    }
+
+    function finalizeBidPayment(
+        uint _targetRound,
+        string memory _adSpot,
+        address _approvedTopBidder
+    ) public onlyOwner returns (bool) {
+        require(!_finalizedChecker[_targetRound][_adSpot], "Already finalized");
+
+        uint _bidderAmt = _biddingsBySpot[_targetRound][_adSpot][
+            _approvedTopBidder
+        ];
+
+        require(
+            token.balanceOf(_approvedTopBidder) >= _bidderAmt,
+            "Insufficient token balance"
+        );
+        require(
+            token.allowance(_approvedTopBidder, address(this)) >= _bidderAmt,
+            "approve token first"
+        );
+        require(
+            token.transferFrom(_approvedTopBidder, address(this), _bidderAmt),
+            "transfer failed"
+        );
+
+        emit Finalized(_targetRound, _adSpot, _approvedTopBidder);
+        _finalizedChecker[_targetRound][_adSpot] = true;
+        return true;
     }
 }

@@ -4,33 +4,36 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./Vault.sol";
-// import "hardhat/console.sol";
+import "hardhat/console.sol";
 
 contract AdAuction is Ownable {
     string[] public _adSpots;
     Vault private _vault;
 
-    modifier onlyValidAdSpot(string calldata _adSpot) {
+    function isSpotExist(string calldata _adSpot) public view returns (bool) {
+        bool isExist;
         for (uint i = 0; i < _adSpots.length; i++) {
-            require(
+            if (
                 keccak256(abi.encodePacked(_adSpots[i])) ==
-                    keccak256(abi.encodePacked(_adSpot)),
-                "Ad spot does not exist"
-            );
+                keccak256(abi.encodePacked(_adSpot))
+            ) {
+                isExist = true;
+            }
         }
-        _;
+        return isExist;
     }
 
     constructor(address _vaultaddr) Ownable((msg.sender)) {
         _vault = Vault(_vaultaddr);
     }
 
-    function createAdStop(string calldata _adSpot) external onlyOwner {
+    function createAdSpot(string calldata _adSpot) public onlyOwner {
+        require(!isSpotExist(_adSpot), "Ad spot already exist");
         _adSpots.push(_adSpot);
     }
 
-    function deleteAdLocation(string calldata _adSpot) external onlyOwner {
-        // _vault.unlock(_adSpot); highest bidder는 unlock 되지 않음
+    function deleteAdSpot(string calldata _adSpot) public onlyOwner {
+        require(isSpotExist(_adSpot), "Ad spot does not exist");
 
         for (uint i = 0; i < _adSpots.length; i++) {
             if (
@@ -44,14 +47,23 @@ contract AdAuction is Ownable {
         }
     }
 
-    function bidAtAuction(
-        string calldata _adSpot,
-        uint256 _amount
-    ) external onlyValidAdSpot(_adSpot) {
-        _vault.lock(_adSpot, msg.sender, _amount);
+    function submitBid(string calldata _adSpot, uint256 _amount) public {
+        require(isSpotExist(_adSpot), "Ad spot does not exist");
+        _vault.submitBid(_adSpot, msg.sender, _amount);
     }
 
-    function pickHighestBidder(string memory _adSpot) external onlyOwner {
-        _vault.unlock(_adSpot);
+    function cancelBid(string calldata _adSpot) public {
+        require(isSpotExist(_adSpot), "Ad spot does not exist");
+        _vault.cancelBid(_adSpot, msg.sender);
+    }
+
+    function encreaseBid(string calldata _adSpot, uint256 _amount) public {
+        require(isSpotExist(_adSpot), "Ad spot does not exist");
+        _vault.encreaseBid(_adSpot, msg.sender, _amount);
+    }
+
+    function decreaseBid(string calldata _adSpot, uint256 _amount) public {
+        require(isSpotExist(_adSpot), "Ad spot does not exist");
+        _vault.decreaseBid(_adSpot, msg.sender, _amount);
     }
 }

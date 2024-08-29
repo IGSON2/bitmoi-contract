@@ -12,7 +12,7 @@
     "@nomicfoundation/hardhat-ignition-ethers": "^0.15.4",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@types/node": "^20.14.2",
-    "hardhat": "^2.22.5",
+    "hardhat": "^2.22.9",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
   },
